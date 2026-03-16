@@ -2,9 +2,9 @@ name: KuVuln Bot
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "master" ]
 
 jobs:
   kuvuln_comprehensive_scan:

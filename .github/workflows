@@ -1,0 +1,78 @@
+name: KuVuln Bot
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  kuvuln_comprehensive_scan:
+    name: Full Spectrum Security
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+
+    steps:
+      - name: 1. Checkout Full History
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 2. Secret Detection (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Eliminamos 'args' porque esta acción lo maneja internamente o vía config file
+
+      - name: 3. Full Repo Audit (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: 4. Static Analysis (Semgrep)
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/secrets
+            p/kubernetes
+        # Eliminamos 'generateSarif' porque en v1 se activa de otra forma o es automático al detectar entorno GitHub
+
+      - name: 5. Upload Reports to Security Tab
+        uses: github/codeql-action/upload-sarif@v4  # Actualizado a v4 para evitar el warning de depreciación
+        if: always()
+        with:
+          # Subimos la carpeta actual; GitHub buscará todos los archivos .sarif generados
+          sarif_file: '.' 
+
+      - name: 6. KuVuln Feedback
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `### 🤖 KuVuln Analysis Report
+            #### Security Status: Checked
+            - **Secrets:** Verified ✅
+            - **Dependencies:** Audited 📦
+            - **Infrastructure (K8s/Docker):** Scanned 🛡️
+            
+            *Check the **Security** tab for detailed line-by-line fixes.*`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: 7. Archive Security Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kuvuln-security-report
+          path: "*.sarif"
